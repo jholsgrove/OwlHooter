@@ -1,11 +1,14 @@
 from __future__ import annotations
 
+import subprocess
 from dataclasses import dataclass, field
 from pathlib import Path
 
 import pytest
 
 from owlhooter.player import (
+    CHECK_TIMEOUT_S,
+    PLAY_TIMEOUT_S,
     PlaybackError,
     Player,
     build_command,
@@ -39,9 +42,11 @@ class FakeRunner:
     result: FakeResult = field(default_factory=FakeResult)
     raises: Exception | None = None
     calls: list[list[str]] = field(default_factory=list)
+    kwargs: list[dict] = field(default_factory=list)
 
     def __call__(self, command, **kwargs):
         self.calls.append(list(command))
+        self.kwargs.append(kwargs)
         if self.raises is not None:
             raise self.raises
         return self.result
@@ -89,6 +94,33 @@ def test_play_raises_when_ffmpeg_is_missing() -> None:
         Player("plughw:CARD=Device", runner=runner).play(Path("sounds/tawny.wav"), 0.9)
 
 
+def test_play_raises_when_ffmpeg_is_missing_names_the_clip() -> None:
+    runner = FakeRunner(raises=FileNotFoundError("ffmpeg"))
+    with pytest.raises(PlaybackError, match="tawny.wav"):
+        Player("plughw:CARD=Device", runner=runner).play(Path("sounds/tawny.wav"), 0.9)
+
+
+def test_play_raises_on_other_os_errors_from_a_fork_under_memory_pressure() -> None:
+    # Not just FileNotFoundError: a fork failing under memory pressure on a
+    # 1GB Pi can raise other OSError subclasses, which must not kill the daemon.
+    runner = FakeRunner(raises=OSError("Cannot allocate memory"))
+    with pytest.raises(PlaybackError, match="tawny.wav"):
+        Player("plughw:CARD=Device", runner=runner).play(Path("sounds/tawny.wav"), 0.9)
+
+
+def test_play_raises_on_timeout_and_names_the_clip() -> None:
+    runner = FakeRunner(raises=subprocess.TimeoutExpired(cmd="ffmpeg", timeout=PLAY_TIMEOUT_S))
+    with pytest.raises(PlaybackError, match="tawny.wav") as excinfo:
+        Player("plughw:CARD=Device", runner=runner).play(Path("sounds/tawny.wav"), 0.9)
+    assert str(PLAY_TIMEOUT_S) in str(excinfo.value)
+
+
+def test_play_passes_a_timeout_to_the_runner() -> None:
+    runner = FakeRunner()
+    Player("plughw:CARD=Device", runner=runner).play(Path("sounds/tawny.wav"), 0.9)
+    assert runner.kwargs[0]["timeout"] == PLAY_TIMEOUT_S
+
+
 def test_ffmpeg_available_is_true_on_success() -> None:
     assert ffmpeg_available(runner=FakeRunner()) is True
 
@@ -101,12 +133,25 @@ def test_ffmpeg_available_is_false_on_a_non_zero_exit() -> None:
     assert ffmpeg_available(runner=FakeRunner(result=FakeResult(returncode=127))) is False
 
 
+def test_ffmpeg_available_is_false_on_timeout() -> None:
+    runner = FakeRunner(raises=subprocess.TimeoutExpired(cmd="ffmpeg", timeout=CHECK_TIMEOUT_S))
+    assert ffmpeg_available(runner=runner) is False
+
+
+def test_ffmpeg_available_passes_a_short_timeout_to_the_runner() -> None:
+    runner = FakeRunner()
+    ffmpeg_available(runner=runner)
+    assert runner.kwargs[0]["timeout"] == CHECK_TIMEOUT_S
+
+
 def test_device_available_finds_a_listed_device() -> None:
     runner = FakeRunner(result=FakeResult(stdout=APLAY_OUTPUT))
     assert device_available("plughw:CARD=Device", runner=runner) is True
 
 
-def test_device_available_matches_by_prefix() -> None:
+def test_device_available_matches_an_exact_device_name() -> None:
+    # "default:CARD=Device" is a whole line in APLAY_OUTPUT with no trailing
+    # ",DEV=..." suffix, so this is an exact match, not a prefix match.
     runner = FakeRunner(result=FakeResult(stdout=APLAY_OUTPUT))
     assert device_available("default:CARD=Device", runner=runner) is True
 
@@ -126,6 +171,19 @@ def test_device_available_is_false_when_aplay_is_missing() -> None:
     assert device_available("plughw:CARD=Device", runner=runner) is False
 
 
+def test_device_available_is_false_on_timeout() -> None:
+    # aplay -L can itself block on a sick USB card, which must not hang the
+    # daemon before it ever reaches the loop.
+    runner = FakeRunner(raises=subprocess.TimeoutExpired(cmd="aplay", timeout=CHECK_TIMEOUT_S))
+    assert device_available("plughw:CARD=Device", runner=runner) is False
+
+
+def test_device_available_passes_a_short_timeout_to_the_runner() -> None:
+    runner = FakeRunner(result=FakeResult(stdout=APLAY_OUTPUT))
+    device_available("plughw:CARD=Device", runner=runner)
+    assert runner.kwargs[0]["timeout"] == CHECK_TIMEOUT_S
+
+
 def test_device_available_prefix_match_respects_comma_boundary() -> None:
     runner = FakeRunner(result=FakeResult(stdout=APLAY_OUTPUT))
     assert device_available("plughw:CARD=Device", runner=runner) is True
@@ -137,13 +195,11 @@ def test_device_available_matches_second_card_by_name() -> None:
 
 
 def test_device_available_rejects_partial_prefix_without_comma() -> None:
+    # "plughw:CARD=Devi" is a prefix of "plughw:CARD=Device,DEV=0" (and of
+    # "plughw:CARD=Device_1,DEV=0") but the character right after it is not a
+    # comma in either case, so it must not match. With the old bare
+    # startswith() logic, this would have incorrectly matched.
     runner = FakeRunner(result=FakeResult(stdout=APLAY_OUTPUT))
-    # "plughw:CARD=Device" is a prefix of "plughw:CARD=Device_1,DEV=0" from aplay output
-    # but NOT followed by comma, so it should NOT match that device
-    # With the old startswith logic, this would have incorrectly matched
-    assert device_available("plughw:CARD=Device", runner=runner) is True  # matches exact
-    assert device_available("plughw:CARD=Device_1", runner=runner) is True  # matches exact
-    # But "plughw:CARD=Devi" should not match either device
     assert device_available("plughw:CARD=Devi", runner=runner) is False
 
 
