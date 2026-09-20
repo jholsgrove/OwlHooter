@@ -1,5 +1,9 @@
 sounds/*
 !sounds/.gitkeep
+!sounds/raw/
+sounds/raw/*
+!sounds/raw/.gitkeep
 __pycache__/
 *.pyc
 .venv/
+.pytest_cache/

@@ -1,0 +1,16 @@
+[Unit]
+Description=OwlHooter mouse deterrent
+After=sound.target network.target
+
+[Service]
+Type=simple
+User=pi
+WorkingDirectory=/home/pi/OwlHooter
+ExecStart=/usr/bin/python3 -m owlhooter.main --config /home/pi/OwlHooter/config.toml
+Restart=on-failure
+RestartSec=30
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
