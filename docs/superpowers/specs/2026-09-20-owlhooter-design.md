@@ -19,11 +19,37 @@ exclusion (sealing entry points), not replace it.
 ## Deployment context
 
 - **Hardware:** Raspberry Pi with a USB speaker / USB sound card.
-- **Location:** Inside the house. People sleep nearby.
+- **Location:** A house extension. The mice are in the roof space above; the equipment sits
+  at floor level in the room below, with power available there.
+- **Neighbours:** No bedrooms adjacent to the room.
 - **Hours:** Night only — silent during the day.
 
-The indoor siting is the key constraint. It is why volume is capped, why a nightly budget
-exists at all, and why the deterrent is occasional rather than continuous.
+### Acoustic siting
+
+The speaker cannot go into the roof cavity. Running a cable up was considered and rejected:
+the penetration is awkward, and mice chew cabling, so a speaker lead in an inaccessible void
+is a poor bet. The speaker therefore sits in the room below and fires upward through the
+plasterboard ceiling.
+
+This has one large consequence for the design: **there is no volume cap.** With no adjacent
+bedrooms, loudness in the room below is not a meaningful constraint, and the sound has a
+ceiling to get through. Volume remains randomised for anti-habituation, but the band sits at
+the top of the range and the maximum is configurable with no hard ceiling in code.
+
+Three physical factors matter more than software gain, and belong in the README rather than
+the code:
+
+- **Height.** Mounting the speaker high — on top of a cupboard or a shelf — beats any amount
+  of gain applied at floor level.
+- **Gaps.** A loft hatch, downlighter cut-out or pipe penetration transmits sound far better
+  than sealed plasterboard. Aim at one if it exists.
+- **Frequency.** Plasterboard attenuates high frequencies much more than low. A tawny owl's
+  low hoot (roughly 500–900 Hz) passes through a ceiling; a barn owl's high screech largely
+  does not.
+
+Actual loudness is set by the speaker's own control and the ALSA mixer (`alsamixer`). The
+configured volume is a digital gain applied by ffmpeg, where `1.0` is unity; values above
+`1.0` clip and distort, so the mixer is the correct place to find more level.
 
 ## Architecture
 
@@ -109,7 +135,7 @@ so this adds **no third-party Python dependencies**.
 | Burst probability | 30% | Chance a hoot event is a burst rather than a single call |
 | Burst size | random 2–3 calls | Mirrors how owls actually call |
 | Gap within a burst | random 2–6 s | Spacing between calls in one burst |
-| Volume | random 40–80% | Varies apparent distance; caps peak loudness indoors |
+| Volume | random 85–100% | Varies apparent distance; no cap — the sound must penetrate a ceiling |
 | No-repeat memory | last 5 clips | Never the same call twice in a row |
 | Silent-night probability | 15% | Removes any learnable night-to-night pattern |
 | ALSA device | `plughw:CARD=Device` | Named, not indexed |
@@ -145,6 +171,10 @@ Recommended source is **xeno-canto.org**, which carries thousands of individuall
 Creative Commons licensed owl recordings (tawny, barn, little, long-eared), filterable by
 species and quality grade. This suits the anti-habituation design far better than compilation
 videos, which provide a single long track and therefore little genuine variety.
+
+Favour **tawny** and **long-eared** owl calls over **barn** owl. This is an acoustic
+requirement, not a preference: the ceiling between the speaker and the mice attenuates the
+barn owl's high-frequency screech far more than the tawny owl's low hoot.
 
 `tools/normalise.sh` is a one-off ingest helper that levels the loudness of everything in
 `sounds/`, so that a quiet recording and a loud one do not behave wildly differently once the
