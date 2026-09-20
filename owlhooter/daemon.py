@@ -81,6 +81,9 @@ class Daemon:
             return "waiting_for_window"
 
         self._begin_night_if_needed(now)
+        # Documentation only: _begin_night_if_needed always sets self._night,
+        # and `python -O` strips this assert. A violation would raise
+        # AttributeError on the next line regardless.
         assert self._night is not None
 
         if self._night.silent:

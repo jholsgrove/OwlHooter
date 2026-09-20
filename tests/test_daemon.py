@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 import random
+import threading
+import time as time_module
 from dataclasses import replace
 from datetime import datetime, time, timedelta
 from pathlib import Path
 
 from owlhooter.config import Config
-from owlhooter.daemon import Daemon
+from owlhooter.daemon import Daemon, InterruptibleSleeper
 from owlhooter.player import PlaybackError
 
 CLIPS = [Path(f"sounds/tawny_{index}.wav") for index in range(8)]
@@ -203,3 +205,62 @@ def test_run_stops_when_the_stop_callback_returns_true() -> None:
 
     daemon.run(stop=stop)
     assert len(player.played) == 3
+
+
+class AttemptRecordingPlayer:
+    """Records every attempted clip, successful or not.
+
+    Unlike FakePlayer.played (which only records successes), this lets a test
+    see that a failing clip was selected at all, so it can assert the very
+    next selection differs from it.
+    """
+
+    def __init__(self, fail_on: Path) -> None:
+        self.attempts: list[Path] = []
+        self._fail_on = fail_on
+
+    def play(self, clip: Path, volume: float) -> None:
+        self.attempts.append(clip)
+        if clip == self._fail_on:
+            raise PlaybackError("simulated failure")
+
+
+def test_a_failing_clip_is_not_picked_again_immediately() -> None:
+    # A memory of 1 means only the immediately-preceding clip is excluded, so
+    # this isolates the "not retried on the very next selection" guarantee.
+    config = replace(BASE_CONFIG, no_repeat_memory=1)
+    player = AttemptRecordingPlayer(fail_on=CLIPS[0])
+    daemon, _, _, _ = build(config, datetime(2026, 9, 20, 21, 5), player=player)
+
+    for _ in range(20):
+        daemon.tick()
+
+    assert CLIPS[0] in player.attempts
+    for first, second in zip(player.attempts, player.attempts[1:]):
+        if first == CLIPS[0]:
+            assert second != CLIPS[0]
+
+
+def test_interrupted_reflects_interrupt_state() -> None:
+    sleeper = InterruptibleSleeper()
+    assert sleeper.interrupted is False
+    sleeper.interrupt()
+    assert sleeper.interrupted is True
+
+
+def test_interrupted_sleeper_returns_immediately() -> None:
+    sleeper = InterruptibleSleeper()
+    sleeper.interrupt()
+    start = time_module.monotonic()
+    sleeper(3600)
+    elapsed = time_module.monotonic() - start
+    assert elapsed < 1.0
+
+
+def test_interrupt_cuts_short_a_wait_in_progress() -> None:
+    sleeper = InterruptibleSleeper()
+    thread = threading.Thread(target=sleeper, args=(30,))
+    thread.start()
+    sleeper.interrupt()
+    thread.join(timeout=5)
+    assert not thread.is_alive()
