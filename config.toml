@@ -1,0 +1,35 @@
+# OwlHooter configuration.
+# Times are local to the Pi. Restart the service after editing:
+#   sudo systemctl restart owlhooter
+
+[schedule]
+window_start = "21:00"
+window_end = "06:00"
+interval_min_minutes = 10
+interval_max_minutes = 30
+# Safety valve against a runaway loop, not the governing constraint.
+# A 9-hour window at a 20-minute mean interval yields roughly 27 events.
+max_events_per_night = 25
+# Chance of skipping an entire night, so there is no learnable pattern.
+silent_night_probability = 0.15
+
+[burst]
+# Real owls call two or three times in sequence rather than once.
+probability = 0.30
+min_calls = 2
+max_calls = 3
+gap_min_seconds = 2.0
+gap_max_seconds = 6.0
+
+[audio]
+# Find yours with: aplay -L | grep plughw
+alsa_device = "plughw:CARD=Device"
+# Digital gain applied by ffmpeg; 1.0 is unity. There is deliberately no cap,
+# because the sound has to get through a ceiling. Above 1.0 will clip and
+# distort - use alsamixer to find more level instead.
+volume_min = 0.85
+volume_max = 1.0
+
+[library]
+sounds_dir = "sounds"
+no_repeat_memory = 5
