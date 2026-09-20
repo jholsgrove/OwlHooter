@@ -85,3 +85,13 @@ def test_seconds_until_window_closes_after_midnight() -> None:
 def test_seconds_until_window_closes_before_midnight() -> None:
     now = datetime(2026, 9, 20, 23, 0)
     assert seconds_until_window_closes(now, NIGHT_END) == 7 * 3600.0
+
+
+def test_seconds_until_window_opens_exactly_at_start() -> None:
+    now = datetime(2026, 9, 20, 21, 0)
+    assert seconds_until_window_opens(now, NIGHT_START) == 0.0
+
+
+def test_seconds_until_window_closes_exactly_at_end() -> None:
+    now = datetime(2026, 9, 21, 6, 0)
+    assert seconds_until_window_closes(now, NIGHT_END) == 0.0

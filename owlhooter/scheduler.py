@@ -33,14 +33,16 @@ def night_key(now: datetime, start: time, end: time) -> date:
 
 def _seconds_until(now: datetime, target: time) -> float:
     candidate = datetime.combine(now.date(), target)
-    if candidate <= now:
+    if candidate < now:
         candidate += timedelta(days=1)
     return (candidate - now).total_seconds()
 
 
 def seconds_until_window_opens(now: datetime, start: time) -> float:
+    """Seconds until the window opens; returns 0.0 if `now` equals `start`."""
     return _seconds_until(now, start)
 
 
 def seconds_until_window_closes(now: datetime, end: time) -> float:
+    """Seconds until the window closes; returns 0.0 if `now` equals `end`."""
     return _seconds_until(now, end)
