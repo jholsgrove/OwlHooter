@@ -33,8 +33,11 @@ A single long-running Python daemon, started and kept alive by systemd. One loop
 while running:
     if not inside active window:  sleep until window opens
     sleep a random interval
-    pick a clip (not one of the recent ones)
-    play it at a random volume
+    decide: a single call, or a burst of 2-3?
+    for each call in the burst:
+        pick a clip (not one of the recent ones)
+        play it at a random volume
+        if more calls follow, pause a few seconds
 ```
 
 Alternatives considered and rejected:
@@ -84,6 +87,7 @@ testable instantly on a development machine with no Pi, no speaker, and no waiti
 - `next_interval(rng, min_s, max_s) -> float`
 - `pick_clip(rng, clips, recent) -> Path`
 - `pick_volume(rng, min_v, max_v) -> float`
+- `burst_size(rng, probability, max_size) -> int`
 - `is_silent_night(rng, probability) -> bool`
 
 **`player.py`** — Builds and runs the ffmpeg command. Takes an injectable subprocess runner
@@ -101,15 +105,32 @@ so this adds **no third-party Python dependencies**.
 |---|---|---|
 | Active window | 21:00–06:00 | Mouse-active hours; crosses midnight |
 | Interval between hoots | random 10–30 min | The core unpredictability |
-| Max hoots per night | 25 | Safety valve against a runaway loop or bad config — not the governing constraint |
+| Max hoot events per night | 25 | Safety valve against a runaway loop or bad config — not the governing constraint |
+| Burst probability | 30% | Chance a hoot event is a burst rather than a single call |
+| Burst size | random 2–3 calls | Mirrors how owls actually call |
+| Gap within a burst | random 2–6 s | Spacing between calls in one burst |
 | Volume | random 40–80% | Varies apparent distance; caps peak loudness indoors |
 | No-repeat memory | last 5 clips | Never the same call twice in a row |
 | Silent-night probability | 15% | Removes any learnable night-to-night pattern |
 | ALSA device | `plughw:CARD=Device` | Named, not indexed |
 
+### On bursts
+
+Real owls rarely call once and fall silent; they call two or three times in sequence. Making
+roughly a third of hoot events a burst therefore sounds more like an actual bird, and adds
+another axis of unpredictability — the mice cannot learn "one hoot, then twenty minutes of
+quiet" either.
+
+Each call within a burst draws its own clip and its own volume, so a burst is not the same
+recording repeated. The no-repeat memory applies across the burst as well, meaning a burst of
+three yields three different calls.
+
+A burst counts as **one** hoot event against the nightly cap, not two or three. The cap exists
+to limit how often the deterrent intrudes, and a burst is a single intrusion.
+
 ### On the cap and the interval
 
-A 21:00–06:00 window is 9 hours; a 20-minute mean interval yields roughly 27 hoots. The cap
+A 21:00–06:00 window is 9 hours; a 20-minute mean interval yields roughly 27 hoot events. The cap
 is set to 25 so that the interval governs behaviour and hoots spread across the entire night.
 A lower cap (e.g. 12) would be exhausted around 01:00 and leave the rest of the night without
 cover — the cap, rather than the interval, would be shaping behaviour. If the deterrent proves
@@ -163,6 +184,9 @@ RNG and a fake clock make assertions exact and instant:
 - Clip selection never returns one of the last five played
 - Clip selection behaves correctly when the library is smaller than the no-repeat memory
 - Silent-night probability honoured across a seeded run
+- Burst size is always 1, or within the configured 2–3 range
+- A burst consumes exactly one unit of the nightly budget
+- Clips within a single burst are all distinct
 
 `player.py` is tested with a fake subprocess runner asserting the ffmpeg command is built
 correctly, including volume and device arguments. No test sleeps, and no test produces audio.
@@ -171,7 +195,5 @@ Playback itself is verified manually on the Pi via `--once`.
 
 ## Out of scope
 
-- **Burst calling** — real owls often call two or three times in sequence. Realistic, but not
-  required for the deterrent effect.
 - **Remote control** — MQTT, web UI, Home Assistant.
 - **Motion/PIR triggering** — the deterrent is time-based by design.
