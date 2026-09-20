@@ -37,34 +37,6 @@ git clone <your-repo-url> /home/pi/OwlHooter
 cd /home/pi/OwlHooter
 ```
 
-Find your audio device and put it in `config.toml`:
-
-```bash
-aplay -L | grep plughw
-```
-
-Turn the output up — the digital gain in `config.toml` is unity at `1.0`, so the real
-loudness comes from here and from the speaker's own control:
-
-```bash
-alsamixer    # F6 to pick the USB card, arrow up, Esc
-sudo alsactl store
-```
-
-Check it works before installing the service:
-
-```bash
-python3 -m owlhooter.main --once
-```
-
-Then install the service:
-
-```bash
-sudo cp deploy/owlhooter.service /etc/systemd/system/
-sudo systemctl daemon-reload
-sudo systemctl enable --now owlhooter
-```
-
 ## Getting owl sounds
 
 Download from [xeno-canto.org](https://xeno-canto.org) — thousands of Creative Commons
@@ -81,6 +53,37 @@ cd /home/pi/OwlHooter
 
 This converts everything to consistent-loudness mono WAV in `sounds/`. The daemon reads
 `sounds/` only, never `sounds/raw/`.
+
+## Configure the audio device and go live
+
+Find your audio device and put it in `config.toml`:
+
+```bash
+aplay -L | grep plughw
+```
+
+Turn the output up — the digital gain in `config.toml` is unity at `1.0`, so the real
+loudness comes from here and from the speaker's own control:
+
+```bash
+alsamixer    # F6 to pick the USB card, arrow up, Esc
+sudo alsactl store
+```
+
+Check it works before installing the service — by now `sounds/` has clips in it, so this
+has something to play:
+
+```bash
+python3 -m owlhooter.main --once
+```
+
+Then install the service:
+
+```bash
+sudo cp deploy/owlhooter.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now owlhooter
+```
 
 ## Operating it
 
