@@ -9,6 +9,8 @@ from __future__ import annotations
 
 import random
 from datetime import date, datetime, time, timedelta
+from pathlib import Path
+from typing import Sequence
 
 
 def is_active(now: datetime, start: time, end: time) -> bool:
@@ -74,3 +76,20 @@ def burst_gap(rng: random.Random, min_s: float, max_s: float) -> float:
 def is_silent_night(rng: random.Random, probability: float) -> bool:
     """Should the whole night be skipped? Removes any night-to-night pattern."""
     return rng.random() < probability
+
+
+def pick_clip(rng: random.Random, clips: Sequence[Path], recent: Sequence[Path]) -> Path:
+    """Choose a clip, avoiding anything in `recent`.
+
+    If the library is smaller than the no-repeat memory, every clip eventually
+    becomes recent. The fallback then excludes only the immediately previous
+    clip, keeping the guarantee that matters: never the same call twice running.
+    """
+    if not clips:
+        raise ValueError("pick_clip requires at least one clip")
+
+    candidates = [clip for clip in clips if clip not in recent]
+    if not candidates:
+        previous = recent[-1] if recent else None
+        candidates = [clip for clip in clips if clip != previous] or list(clips)
+    return rng.choice(candidates)
