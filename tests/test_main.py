@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import random
+import re
 from dataclasses import replace
 from datetime import datetime, time
 from pathlib import Path
@@ -115,11 +116,22 @@ def test_dry_run_prints_a_schedule_and_exits_zero(tmp_path: Path, capsys) -> Non
     output = capsys.readouterr().out
     assert "tawny_" in output
     assert "call" in output.lower()
+    # The table itself, not just any line mentioning a clip: a simulated
+    # HH:MM:SS timestamp, a clip name, and a gain reading.
+    assert re.search(r"\d{2}:\d{2}:\d{2}\s+tawny_\d+\.wav\s+gain \d\.\d{2}", output)
+    # No log line - of any level - may leak into a dry-run's stdout: that
+    # would be a real wall-clock timestamp sitting above a simulated one.
+    assert "INFO" not in output
 
 
-def test_dry_run_needs_no_audio_hardware(tmp_path: Path) -> None:
-    # No ffmpeg or ALSA device is checked, so this passes on any machine.
+def test_dry_run_needs_no_audio_hardware(tmp_path: Path, monkeypatch) -> None:
     config_path = make_project(tmp_path)
+
+    def _must_not_be_called(*args, **kwargs):
+        raise AssertionError("hardware check should not be called during --dry-run")
+
+    monkeypatch.setattr("owlhooter.main.ffmpeg_available", _must_not_be_called)
+    monkeypatch.setattr("owlhooter.main.device_available", _must_not_be_called)
     assert main(["--config", str(config_path), "--dry-run", "--seed", "1"]) == 0
 
 
@@ -134,3 +146,40 @@ def test_empty_sounds_directory_exits_four(tmp_path: Path, capsys) -> None:
         clip.unlink()
     assert main(["--config", str(config_path), "--dry-run"]) == 4
     assert "no audio clips" in capsys.readouterr().err.lower()
+
+
+def test_missing_ffmpeg_exits_three(tmp_path: Path, capsys, monkeypatch) -> None:
+    config_path = make_project(tmp_path)
+    monkeypatch.setattr("owlhooter.main.ffmpeg_available", lambda: False)
+    monkeypatch.setattr("owlhooter.main.device_available", lambda device: True)
+    assert main(["--config", str(config_path)]) == 3
+    assert "apt install ffmpeg" in capsys.readouterr().err.lower()
+
+
+def test_missing_audio_device_exits_five(tmp_path: Path, capsys, monkeypatch) -> None:
+    config_path = make_project(tmp_path)
+    monkeypatch.setattr("owlhooter.main.ffmpeg_available", lambda: True)
+    monkeypatch.setattr("owlhooter.main.device_available", lambda device: False)
+    assert main(["--config", str(config_path)]) == 5
+    assert "aplay -l" in capsys.readouterr().err.lower()
+
+
+def test_once_playback_failure_exits_five(tmp_path: Path, capsys, monkeypatch) -> None:
+    from owlhooter.player import PlaybackError
+
+    config_path = make_project(tmp_path)
+    monkeypatch.setattr("owlhooter.main.ffmpeg_available", lambda: True)
+    monkeypatch.setattr("owlhooter.main.device_available", lambda device: True)
+
+    class _FailingPlayer:
+        def __init__(self, device: str) -> None:
+            pass
+
+        def play(self, clip, volume) -> None:
+            raise PlaybackError("device busy")
+
+    monkeypatch.setattr("owlhooter.main.Player", _FailingPlayer)
+    assert main(["--config", str(config_path), "--once"]) == 5
+    err = capsys.readouterr().err.lower()
+    assert "device busy" in err
+    assert "tawny_" in err

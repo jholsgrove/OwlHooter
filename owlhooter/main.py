@@ -15,7 +15,7 @@ from owlhooter import scheduler
 from owlhooter.config import DEFAULT_CONFIG_PATH, Config, ConfigError, load_config
 from owlhooter.daemon import Daemon, InterruptibleSleeper
 from owlhooter.library import LibraryError, discover_clips
-from owlhooter.player import Player, device_available, ffmpeg_available
+from owlhooter.player import Player, PlaybackError, device_available, ffmpeg_available
 
 EXIT_OK = 0
 EXIT_CONFIG_ERROR = 2
@@ -85,6 +85,18 @@ def simulate_night(
     clock = _SimClock(start_at)
     sleeper = _SimSleeper(clock)
     events: list[tuple[datetime, Path, float]] = []
+
+    # This logger must never print anything, in this process or any other:
+    # its messages are stamped with the wall-clock time the simulation ran,
+    # not the simulated time they describe, and mixing the two defeats the
+    # whole point of a schedule preview. `propagate = False` plus a
+    # NullHandler makes it inert regardless of how the caller (main(), a
+    # test, or anything else) has configured logging elsewhere.
+    dry_run_log = logging.getLogger("owlhooter.dryrun")
+    dry_run_log.propagate = False
+    if not dry_run_log.handlers:
+        dry_run_log.addHandler(logging.NullHandler())
+
     daemon = Daemon(
         config=config,
         player=_RecordingPlayer(clock, events),
@@ -92,7 +104,7 @@ def simulate_night(
         rng=rng,
         clock=clock,
         sleeper=sleeper,
-        log=logging.getLogger("owlhooter.dryrun"),
+        log=dry_run_log,
     )
     deadline = start_at + timedelta(
         seconds=scheduler.seconds_until_window_closes(start_at, config.window_end)
@@ -127,7 +139,11 @@ def _run_once(config: Config, clips: list[Path], seed: int | None, volume: float
         else scheduler.pick_volume(rng, config.volume_min, config.volume_max)
     )
     log.info("playing %s at gain %.2f on %s", clip.name, gain, config.alsa_device)
-    Player(config.alsa_device).play(clip, gain)
+    try:
+        Player(config.alsa_device).play(clip, gain)
+    except PlaybackError as exc:
+        print(f"playback failed for {clip.name}: {exc}", file=sys.stderr)
+        return EXIT_NO_DEVICE
     return EXIT_OK
 
 
@@ -164,11 +180,6 @@ def _run_daemon(config: Config, clips: list[Path], seed: int | None) -> int:
 
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s %(levelname)s %(message)s",
-        stream=sys.stdout,
-    )
 
     try:
         config = load_config(args.config)
@@ -183,7 +194,11 @@ def main(argv: list[str] | None = None) -> int:
         return EXIT_LIBRARY_ERROR
 
     if args.dry_run:
-        # No audio is produced, so no hardware is checked.
+        # No audio is produced, so no hardware is checked - and no logging is
+        # configured either. The whole point of --dry-run is a clean table of
+        # simulated times; wiring up logging here would risk exactly the
+        # leaked-real-clock-log-lines bug simulate_night's own logger already
+        # guards against.
         return _run_dry_run(config, clips, args.seed)
 
     if not ffmpeg_available():
@@ -197,6 +212,14 @@ def main(argv: list[str] | None = None) -> int:
             file=sys.stderr,
         )
         return EXIT_NO_DEVICE
+
+    # Only the paths that actually run something worth logging - a single
+    # commissioning call, or the daemon loop - configure logging.
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s %(levelname)s %(message)s",
+        stream=sys.stdout,
+    )
 
     if args.once:
         return _run_once(config, clips, args.seed, args.volume)
