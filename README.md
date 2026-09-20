@@ -28,14 +28,69 @@ useful gain is physical rather than digital:
   better than sealed plasterboard. Aim at one if there is one.
 - **Low frequencies get through; high ones do not.** Favour tawny and long-eared owl over barn owl: their low hoot (roughly 500-900 Hz) passes through a ceiling, while a barn owl's high screech is largely reflected by it.
 
+## Getting onto the Pi over SSH
+
+The Pi runs headless — no keyboard, no monitor — so everything below happens over SSH.
+
+**Enable SSH when you flash the card, not afterwards.** Pi OS Lite has no desktop and SSH is
+off by default, so a Pi flashed without this is unreachable. In Raspberry Pi Imager, before
+you click Write, open the customisation dialog (the gear icon, or `Ctrl+Shift+X`) and set:
+
+- a hostname, e.g. `owlhooter`
+- a username and password — Pi OS no longer ships a default `pi` account
+- your WiFi SSID, password and country, unless you are using Ethernet
+- **Services → Enable SSH**, with password authentication
+
+Then boot the Pi and connect. Windows has an SSH client built in, so Windows Terminal or
+PowerShell is enough — no PuTTY needed:
+
+```bash
+ssh <your-username>@owlhooter.local
+```
+
+If `owlhooter.local` does not resolve, mDNS is not working on your network. Find the Pi's IP
+in your router's DHCP client list and use that instead.
+
+### Getting the code onto the Pi
+
+If you have pushed this repo to a git host, clone it on the Pi:
+
+```bash
+git clone <your-repo-url> ~/OwlHooter
+```
+
+If you have not — which is the default for a personal project — copy it from your machine
+instead. `rsync` is worth it here because the `sounds/` directory is a few hundred megabytes
+and rsync will resume rather than restart if the WiFi drops:
+
+```bash
+# from WSL or any Linux/macOS shell, on your machine, not the Pi
+rsync -av --exclude '.git' --exclude 'sounds/raw' \
+    /mnt/c/Repos/OwlHooter/ <your-username>@owlhooter.local:~/OwlHooter/
+```
+
+`sounds/raw` is excluded deliberately: those are the unprocessed downloads, and only the
+normalised clips in `sounds/` are needed on the Pi. Normalising on a desktop and copying the
+results across is far quicker than making a Pi 4 transcode a hundred files.
+
+Copying from Windows loses the executable bit, so restore it on the Pi:
+
+```bash
+chmod +x ~/OwlHooter/tools/normalise.sh
+```
+
 ## Install
+
+On the Pi:
 
 ```bash
 sudo apt update
 sudo apt install -y ffmpeg
-git clone <your-repo-url> /home/pi/OwlHooter
-cd /home/pi/OwlHooter
+cd ~/OwlHooter
 ```
+
+If you copied the clips across with rsync above, `sounds/` is already populated and you can
+skip the next section.
 
 ## Getting owl sounds
 
@@ -77,13 +132,19 @@ has something to play:
 python3 -m owlhooter.main --once
 ```
 
-Then install the service:
+Then install the service. The shipped unit says `User=pi` and `/home/pi/OwlHooter`, but Pi OS
+no longer creates a default `pi` account — Imager made you choose a username — so rewrite
+those to match yours as you install it:
 
 ```bash
-sudo cp deploy/owlhooter.service /etc/systemd/system/
+sed -e "s|User=pi|User=$USER|" -e "s|/home/pi/|$HOME/|g" \
+    deploy/owlhooter.service | sudo tee /etc/systemd/system/owlhooter.service
 sudo systemctl daemon-reload
 sudo systemctl enable --now owlhooter
 ```
+
+If you skip this and your username is not `pi`, the unit fails immediately with
+`Failed to determine user credentials`, then retries every 30 seconds.
 
 ## Operating it
 
