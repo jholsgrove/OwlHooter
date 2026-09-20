@@ -7,6 +7,8 @@ from dataclasses import replace
 from datetime import datetime, time, timedelta
 from pathlib import Path
 
+import pytest
+
 from owlhooter.config import Config
 from owlhooter.daemon import Daemon, InterruptibleSleeper
 from owlhooter.player import PlaybackError
@@ -197,14 +199,69 @@ def test_a_failing_clip_does_not_stop_the_loop() -> None:
 
 def test_run_stops_when_the_stop_callback_returns_true() -> None:
     daemon, _, _, player = build(BASE_CONFIG, datetime(2026, 9, 20, 22, 0))
-    ticks = {"count": 0}
 
+    # Based on state rather than a call count: tick() now consults the same
+    # predicate mid-tick (Important 1), so the number of times it is invoked
+    # per loop iteration is no longer a stable thing to assert against.
     def stop() -> bool:
-        ticks["count"] += 1
-        return ticks["count"] > 3
+        return len(player.played) >= 3
 
     daemon.run(stop=stop)
     assert len(player.played) == 3
+
+
+def test_run_with_no_stop_argument_keeps_ticking_forever() -> None:
+    """Unchanged behaviour (Important 1, required test 3): stop=None must
+    still loop via tick() exactly as before - it is simulate_night's and the
+    original run()'s contract."""
+    daemon, _, _, _ = build(BASE_CONFIG, datetime(2026, 9, 20, 22, 0))
+    calls = {"count": 0}
+    real_tick = daemon.tick
+
+    def counting_tick() -> str:
+        calls["count"] += 1
+        if calls["count"] >= 3:
+            raise RuntimeError("test boundary")
+        return real_tick()
+
+    daemon.tick = counting_tick  # type: ignore[method-assign]
+    with pytest.raises(RuntimeError, match="test boundary"):
+        daemon.run()
+    assert calls["count"] == 3
+
+
+def test_tick_completes_a_full_burst_when_no_stop_predicate_is_set() -> None:
+    """Unchanged behaviour (Important 1, required test 3): the default
+    no-op stop predicate must not truncate a burst."""
+    config = replace(BASE_CONFIG, burst_probability=1.0, burst_min_calls=3, burst_max_calls=3)
+    daemon, _, _, player = build(config, datetime(2026, 9, 20, 22, 0))
+    assert daemon.tick() == "hooted"
+    assert len(player.played) == 3
+
+
+def test_stop_predicate_firing_during_the_interval_sleep_interrupts_the_tick() -> None:
+    """Important 1, required test 1: a stop that fires during the interval
+    wait must make tick() return 'interrupted' and play nothing at all."""
+    daemon, _, sleeper, player = build(BASE_CONFIG, datetime(2026, 9, 20, 22, 0))
+    daemon._stop = lambda: len(sleeper.slept) >= 1
+
+    assert daemon.tick() == "interrupted"
+    assert player.played == []
+
+
+def test_stop_predicate_firing_mid_burst_truncates_it() -> None:
+    """Important 1, required test 2: a stop that fires between burst calls
+    must truncate the burst rather than blast the remaining calls instantly."""
+    config = replace(BASE_CONFIG, burst_probability=1.0, burst_min_calls=3, burst_max_calls=3)
+    daemon, _, sleeper, player = build(config, datetime(2026, 9, 20, 22, 0))
+    # sleeper.slept[0] is the interval wait; sleeper.slept[1] is the first
+    # burst gap. Stopping once that gap has happened truncates the burst
+    # after the first call, instead of the three calls a full burst plays.
+    daemon._stop = lambda: len(sleeper.slept) >= 2
+
+    assert daemon.tick() == "hooted"
+    assert len(player.played) == 1
+    assert len(sleeper.slept) == 2
 
 
 class AttemptRecordingPlayer:

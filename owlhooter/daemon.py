@@ -68,6 +68,9 @@ class Daemon:
         self._log = log or logging.getLogger("owlhooter")
         self._recent: deque[Path] = deque(maxlen=config.no_repeat_memory)
         self._night: NightState | None = None
+        # simulate_night and other direct tick() callers never pass a stop
+        # predicate via run(), so this default keeps them unaffected.
+        self._stop: Callable[[], bool] = lambda: False
 
     def tick(self) -> str:
         """Make exactly one decision. Returns a label naming what happened."""
@@ -98,6 +101,9 @@ class Daemon:
             scheduler.next_interval(self._rng, config.interval_min_s, config.interval_max_s)
         )
 
+        if self._stop():
+            return "interrupted"
+
         # The interval may have run past dawn.
         if not scheduler.is_active(self._clock(), config.window_start, config.window_end):
             return "window_closed"
@@ -107,7 +113,8 @@ class Daemon:
         return "hooted"
 
     def run(self, stop: Callable[[], bool] | None = None) -> None:
-        while stop is None or not stop():
+        self._stop = stop or (lambda: False)
+        while not self._stop():
             self.tick()
 
     def _begin_night_if_needed(self, now: datetime) -> None:
@@ -129,6 +136,12 @@ class Daemon:
             self._rng, config.burst_probability, config.burst_min_calls, config.burst_max_calls
         )
         for index in range(calls):
+            # Checked from the second call onward: a stop requested before the
+            # first burst gap must not cancel the call already committed to by
+            # tick(), but a stop that arrives during a gap must truncate the
+            # rest of the burst rather than blast the remaining calls instantly.
+            if index > 0 and self._stop():
+                break
             clip = scheduler.pick_clip(self._rng, self._clips, self._recent)
             volume = scheduler.pick_volume(self._rng, config.volume_min, config.volume_max)
             # Recorded before playing, so a broken clip is not retried immediately.
