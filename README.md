@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="logo-oh.jpg" alt="OwlHooter logo: an owl hooting while a mouse flees" width="260">
+  <img src="logo-oh.png" alt="OwlHooter logo: an owl hooting while a mouse flees" width="260">
 </p>
 
 # OwlHooter
