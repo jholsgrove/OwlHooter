@@ -63,7 +63,10 @@ class Player:
                 f"ffmpeg timed out after {PLAY_TIMEOUT_S}s playing {clip}"
             ) from exc
         except OSError as exc:
-            raise PlaybackError(f"ffmpeg is not installed: {clip}: {exc}") from exc
+            # Covers ffmpeg being missing (FileNotFoundError) as well as a
+            # fork failing under memory pressure on a 1GB Pi (other OSError
+            # subclasses) - neither may be allowed to kill the daemon.
+            raise PlaybackError(f"could not run ffmpeg for {clip}: {exc}") from exc
         if result.returncode != 0:
             raise PlaybackError(f"ffmpeg failed for {clip}: {result.stderr.strip()}")
 
