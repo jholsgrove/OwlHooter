@@ -26,27 +26,7 @@ useful gain is physical rather than digital:
   possible. Halving the distance is worth more than any software setting.
 - **Find the gaps.** A loft hatch, downlighter cut-out or pipe penetration passes sound far
   better than sealed plasterboard. Aim at one if there is one.
-- **Low frequencies get through; high ones do not.** See the next section.
-
-## Getting owl sounds
-
-Download from [xeno-canto.org](https://xeno-canto.org) — thousands of Creative Commons
-recordings, filterable by species and quality grade. Grab a couple of dozen; variety is what
-keeps the deterrent working.
-
-**Favour tawny and long-eared owl over barn owl.** This is acoustics, not preference: a tawny
-owl's low hoot (roughly 500-900 Hz) passes through a ceiling, while a barn owl's high screech
-is largely reflected by it.
-
-Then normalise them:
-
-```bash
-# put the downloads in sounds/raw/ first
-./tools/normalise.sh
-```
-
-This converts everything to consistent-loudness mono WAV in `sounds/`. The daemon reads
-`sounds/` only, never `sounds/raw/`.
+- **Low frequencies get through; high ones do not.** Favour tawny and long-eared owl over barn owl: their low hoot (roughly 500-900 Hz) passes through a ceiling, while a barn owl's high screech is largely reflected by it.
 
 ## Install
 
@@ -84,6 +64,23 @@ sudo cp deploy/owlhooter.service /etc/systemd/system/
 sudo systemctl daemon-reload
 sudo systemctl enable --now owlhooter
 ```
+
+## Getting owl sounds
+
+Download from [xeno-canto.org](https://xeno-canto.org) — thousands of Creative Commons
+recordings, filterable by species and quality grade. Grab a couple of dozen; variety is what
+keeps the deterrent working.
+
+Then normalise them:
+
+```bash
+cd /home/pi/OwlHooter
+# put the downloads in sounds/raw/ first
+./tools/normalise.sh
+```
+
+This converts everything to consistent-loudness mono WAV in `sounds/`. The daemon reads
+`sounds/` only, never `sounds/raw/`.
 
 ## Operating it
 
@@ -123,10 +120,12 @@ change:
 | Exits with code 2 | Config file missing or invalid — the message says which setting |
 | Exits with code 3 | ffmpeg not installed: `sudo apt install ffmpeg` |
 | Exits with code 4 | No clips in `sounds/` — download some and run `tools/normalise.sh` |
-| Exits with code 5 | `alsa_device` does not match anything in `aplay -L` |
+| Exits with code 5 (device not found) | `alsa_device` does not match anything in `aplay -L`. Check the device string in `config.toml` against `aplay -L \| grep plughw` |
+| Exits with code 5 (playback failed) | The device exists but a specific clip failed to play. Message reads `playback failed for <clip>: <reason>`. Try `python3 -m owlhooter.main --once` with a different clip, or re-run `tools/normalise.sh` on the failing clip |
 | Runs but is silent | Check the window in `config.toml`, then `alsamixer` levels, then `--once` |
 | Too quiet through the ceiling | Raise the speaker; use tawny not barn owl clips; raise `alsamixer`, not `volume_max` |
 | Played the same clip twice running | Only possible with fewer than two clips in `sounds/` |
+| Systemctl status shows repeated activating/restarting | Unit is hitting a persistent startup failure and restarting every 30 seconds. Run `journalctl -u owlhooter` to see which exit code and reason, then consult the exit-code rows above |
 
 ## Development
 
