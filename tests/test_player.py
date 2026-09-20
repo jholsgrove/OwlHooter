@@ -21,6 +21,9 @@ default:CARD=Device
 plughw:CARD=Device,DEV=0
     USB Audio Device, USB Audio
     Hardware device with all software conversions
+plughw:CARD=Device_1,DEV=0
+    USB Audio Device #2, USB Audio
+    Hardware device with all software conversions
 """
 
 
@@ -121,3 +124,34 @@ def test_device_available_ignores_indented_description_lines() -> None:
 def test_device_available_is_false_when_aplay_is_missing() -> None:
     runner = FakeRunner(raises=FileNotFoundError())
     assert device_available("plughw:CARD=Device", runner=runner) is False
+
+
+def test_device_available_prefix_match_respects_comma_boundary() -> None:
+    runner = FakeRunner(result=FakeResult(stdout=APLAY_OUTPUT))
+    assert device_available("plughw:CARD=Device", runner=runner) is True
+
+
+def test_device_available_matches_second_card_by_name() -> None:
+    runner = FakeRunner(result=FakeResult(stdout=APLAY_OUTPUT))
+    assert device_available("plughw:CARD=Device_1", runner=runner) is True
+
+
+def test_device_available_rejects_partial_prefix_without_comma() -> None:
+    runner = FakeRunner(result=FakeResult(stdout=APLAY_OUTPUT))
+    # "plughw:CARD=Device" is a prefix of "plughw:CARD=Device_1,DEV=0" from aplay output
+    # but NOT followed by comma, so it should NOT match that device
+    # With the old startswith logic, this would have incorrectly matched
+    assert device_available("plughw:CARD=Device", runner=runner) is True  # matches exact
+    assert device_available("plughw:CARD=Device_1", runner=runner) is True  # matches exact
+    # But "plughw:CARD=Devi" should not match either device
+    assert device_available("plughw:CARD=Devi", runner=runner) is False
+
+
+def test_device_available_is_false_for_empty_device() -> None:
+    runner = FakeRunner(result=FakeResult(stdout=APLAY_OUTPUT))
+    assert device_available("", runner=runner) is False
+
+
+def test_device_available_is_false_for_whitespace_only_device() -> None:
+    runner = FakeRunner(result=FakeResult(stdout=APLAY_OUTPUT))
+    assert device_available("   ", runner=runner) is False

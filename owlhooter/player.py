@@ -65,6 +65,9 @@ def device_available(device: str, runner=subprocess.run) -> bool:
     aplay lists PCM names flush to the left margin and indents their
     descriptions, so only unindented lines are candidate device names.
     """
+    if not device.strip():
+        return False
+
     try:
         result = runner(["aplay", "-L"], capture_output=True, text=True)
     except FileNotFoundError:
@@ -77,4 +80,7 @@ def device_available(device: str, runner=subprocess.run) -> bool:
         for line in result.stdout.splitlines()
         if line.strip() and not line[0].isspace()
     ]
-    return any(name == device or name.startswith(device) for name in names)
+    return any(
+        name == device or (name.startswith(device) and len(name) > len(device) and name[len(device)] == ",")
+        for name in names
+    )
