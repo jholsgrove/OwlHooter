@@ -94,20 +94,64 @@ skip the next section.
 
 ## Getting owl sounds
 
-Download from [xeno-canto.org](https://xeno-canto.org) — thousands of Creative Commons
-recordings, filterable by species and quality grade. Grab a couple of dozen; variety is what
-keeps the deterrent working.
+Variety is the whole anti-habituation mechanism, so more clips is strictly better. There are
+two ways to get them, and you can use both.
 
-Then normalise them:
+### Quickest: the bundled starter clips
+
+`starter-clips/` holds eight recordings — five tawny owl, one barn owl, one little owl, one
+buzzard — so the deterrent works immediately:
 
 ```bash
-cd /home/pi/OwlHooter
-# put the downloads in sounds/raw/ first
+cd ~/OwlHooter
+cp starter-clips/*.mp3 sounds/raw/
 ./tools/normalise.sh
 ```
 
-This converts everything to consistent-loudness mono WAV in `sounds/`. The daemon reads
-`sounds/` only, never `sounds/raw/`.
+These eight are bundled because they are CC0 or plain CC BY, with no NonCommercial,
+NoDerivatives or ShareAlike conditions attached. Credits are in
+[`starter-clips/ATTRIBUTION.md`](starter-clips/ATTRIBUTION.md).
+
+Eight clips is enough to prove the system works, but it is thin for a deterrent that relies
+on never sounding the same twice. Get more.
+
+### Better: fetch a full library
+
+`tools/fetch-xeno-canto.py` pulls 130-odd recordings across nine species of UK rodent
+predator in one command. It needs a free API key from your
+[xeno-canto account page](https://xeno-canto.org/account):
+
+```bash
+python3 tools/fetch-xeno-canto.py --key YOUR_KEY --out sounds/raw
+./tools/normalise.sh
+```
+
+The key is passed on the command line and never stored — do not paste it into any file in
+this repo.
+
+The species list is chosen on acoustics as much as biology. Low-frequency callers come first,
+because a plasterboard ceiling attenuates high frequencies far more than low ones: a tawny
+owl's hoot passes through, a barn owl's screech largely does not. Barn, little and short-eared
+owl are still included, because they are the predators UK house mice actually encounter, and a
+partly-attenuated call still varies the signal. Edit the `SPECIES` list in the script to
+change the mix.
+
+The script also writes an `ATTRIBUTION.txt` next to the downloads recording the recordist,
+licence and xeno-canto ID of every file. Most xeno-canto recordings carry NonCommercial and
+ShareAlike conditions, so keep that file if you redistribute anything.
+
+### Normalising
+
+Either route ends the same way:
+
+```bash
+./tools/normalise.sh
+```
+
+This converts everything in `sounds/raw/` to consistent-loudness mono WAV in `sounds/`.
+Consistent loudness matters because the daemon applies a random gain on top; without it, a
+quiet recording and a loud one behave completely differently. The daemon reads `sounds/`
+only, never `sounds/raw/`.
 
 ## Configure the audio device and go live
 
