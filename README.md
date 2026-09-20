@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="logo-oh.jpg" alt="OwlHooter logo: an owl hooting while a mouse flees" width="260">
+</p>
+
 # OwlHooter
 
 A Raspberry Pi mouse deterrent. It plays owl calls through a speaker at unpredictable
