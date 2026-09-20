@@ -52,7 +52,9 @@ def test_loads_a_valid_config(tmp_path: Path) -> None:
     assert config.burst_max_calls == 3
     assert config.volume_max == 1.0
     assert config.alsa_device == "plughw:CARD=Device"
-    assert config.sounds_dir == Path("sounds")
+    # A relative sounds_dir resolves against the config file's directory
+    # (Minor 4), not the process's current working directory.
+    assert config.sounds_dir == tmp_path / "sounds"
     assert config.no_repeat_memory == 5
 
 
@@ -117,3 +119,27 @@ def test_zero_no_repeat_memory_is_allowed(tmp_path: Path) -> None:
 def test_shipped_config_file_is_valid() -> None:
     config = load_config(Path("config.toml"))
     assert config.window_start == time(21, 0)
+
+
+def test_unreadable_file_raises_config_error(tmp_path: Path) -> None:
+    # Minor 3: the realistic Pi case is a root-owned config.toml after an
+    # scp/sudo cp during install. A directory passed as the config path
+    # reproduces the same "OSError other than FileNotFoundError" shape
+    # (IsADirectoryError on Linux, PermissionError on Windows) without
+    # depending on platform-specific permission bits.
+    directory_as_config = tmp_path / "config.toml"
+    directory_as_config.mkdir()
+    with pytest.raises(ConfigError, match="config file could not be read"):
+        load_config(directory_as_config)
+
+
+def test_relative_sounds_dir_resolves_against_the_config_files_directory(tmp_path: Path) -> None:
+    config = load_config(write_config(tmp_path, VALID_TOML))
+    assert config.sounds_dir == tmp_path / "sounds"
+
+
+def test_absolute_sounds_dir_passes_through_untouched(tmp_path: Path) -> None:
+    absolute_sounds = tmp_path / "elsewhere" / "sounds"
+    text = VALID_TOML.replace('sounds_dir = "sounds"', f'sounds_dir = "{absolute_sounds.as_posix()}"')
+    config = load_config(write_config(tmp_path, text))
+    assert config.sounds_dir == absolute_sounds

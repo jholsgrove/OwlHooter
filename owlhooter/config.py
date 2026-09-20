@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import tomllib
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import time
 from pathlib import Path
 
@@ -51,6 +51,13 @@ def load_config(path: Path) -> Config:
         raise ConfigError(f"config file not found: {path}") from exc
     except tomllib.TOMLDecodeError as exc:
         raise ConfigError(f"config file is not valid TOML: {path}: {exc}") from exc
+    except OSError as exc:
+        # The realistic Pi case: a root-owned 0600 config.toml after an
+        # scp/sudo cp during install raises IsADirectoryError (Linux) or
+        # PermissionError (Windows) - both OSError subclasses that would
+        # otherwise escape as an unhandled traceback and exit 1, instead of
+        # the "config error: ..." and exit 2 the README promises.
+        raise ConfigError(f"config file could not be read: {path}: {exc}") from exc
 
     schedule = raw.get("schedule", {})
     burst = raw.get("burst", {})
@@ -78,6 +85,12 @@ def load_config(path: Path) -> Config:
         )
     except (TypeError, ValueError) as exc:
         raise ConfigError(f"config file contains a value of the wrong type: {exc}") from exc
+
+    if not config.sounds_dir.is_absolute():
+        # A relative sounds_dir must resolve against the config file's own
+        # location, not the process's current working directory - the
+        # systemd unit only gets this right by accident of WorkingDirectory=.
+        config = replace(config, sounds_dir=path.parent / config.sounds_dir)
 
     _validate(config)
     return config
