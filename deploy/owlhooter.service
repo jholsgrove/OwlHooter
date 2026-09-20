@@ -1,6 +1,7 @@
 [Unit]
 Description=OwlHooter mouse deterrent
-After=sound.target network.target
+After=sound.target network.target time-sync.target
+Wants=time-sync.target
 
 [Service]
 Type=simple

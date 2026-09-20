@@ -164,6 +164,56 @@ def test_missing_audio_device_exits_five(tmp_path: Path, capsys, monkeypatch) ->
     assert "aplay -l" in capsys.readouterr().err.lower()
 
 
+class _RecordingPlayer:
+    """Fake Player used by the --once success-path tests below.
+
+    Records the device its constructor received (class-level, since main()
+    constructs it) and every (clip, volume) passed to play().
+    """
+
+    last_device: str | None = None
+    plays: list[tuple[Path, float]] = []
+
+    def __init__(self, device: str) -> None:
+        type(self).last_device = device
+        type(self).plays = []
+
+    def play(self, clip: Path, volume: float) -> None:
+        type(self).plays.append((clip, volume))
+
+
+def test_once_success_path_plays_a_clip_through_the_configured_device(
+    tmp_path: Path, monkeypatch
+) -> None:
+    # Important 1 hid exactly here: nothing exercised the path that
+    # constructs a real Player before this test (Minor 7, partial).
+    config_path = make_project(tmp_path)
+    monkeypatch.setattr("owlhooter.main.ffmpeg_available", lambda: True)
+    monkeypatch.setattr("owlhooter.main.device_available", lambda device: True)
+    monkeypatch.setattr("owlhooter.main.Player", _RecordingPlayer)
+
+    assert main(["--config", str(config_path), "--once", "--seed", "1"]) == 0
+
+    assert _RecordingPlayer.last_device == "plughw:CARD=Device"
+    assert len(_RecordingPlayer.plays) == 1
+    clip, gain = _RecordingPlayer.plays[0]
+    assert clip.name.startswith("tawny_")
+    assert 0.85 <= gain <= 1.0
+
+
+def test_once_volume_flag_overrides_the_configured_gain_exactly(
+    tmp_path: Path, monkeypatch
+) -> None:
+    config_path = make_project(tmp_path)
+    monkeypatch.setattr("owlhooter.main.ffmpeg_available", lambda: True)
+    monkeypatch.setattr("owlhooter.main.device_available", lambda device: True)
+    monkeypatch.setattr("owlhooter.main.Player", _RecordingPlayer)
+
+    assert main(["--config", str(config_path), "--once", "--volume", "1.5"]) == 0
+
+    assert _RecordingPlayer.plays == [(_RecordingPlayer.plays[0][0], 1.5)]
+
+
 def test_once_playback_failure_exits_five(tmp_path: Path, capsys, monkeypatch) -> None:
     from owlhooter.player import PlaybackError
 
