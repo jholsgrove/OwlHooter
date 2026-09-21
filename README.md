@@ -181,18 +181,30 @@ python3 -m owlhooter.main --once
 ```
 
 Then install the service. The shipped unit says `User=pi` and `/home/pi/OwlHooter`, but Pi OS
-no longer creates a default `pi` account — Imager made you choose a username — so rewrite
-those to match yours as you install it:
+no longer creates a default `pi` account — Imager made you choose a username — and your
+clone may not sit in your home directory, so rewrite both as you install it. Run this from
+the root of the checkout, so `$PWD` is the directory the unit should work from:
 
 ```bash
-sed -e "s|User=pi|User=$USER|" -e "s|/home/pi/|$HOME/|g" \
+cd ~/Repos/OwlHooter   # wherever you cloned it
+sed -e "s|User=pi|User=$USER|" -e "s|/home/pi/OwlHooter|$PWD|g" \
     deploy/owlhooter.service | sudo tee /etc/systemd/system/owlhooter.service
 sudo systemctl daemon-reload
 sudo systemctl enable --now owlhooter
 ```
 
-If you skip this and your username is not `pi`, the unit fails immediately with
-`Failed to determine user credentials`, then retries every 30 seconds.
+The `tee` prints what it wrote — check that `User=`, `WorkingDirectory=` and the `--config`
+path all name your account and your checkout before you move on. Two ways this bites:
+
+| `systemctl status` shows | Meaning |
+| --- | --- |
+| `status=217/USER` | `User=` is still `pi`, or another account that does not exist |
+| `status=200/CHDIR` | `WorkingDirectory=` points at a directory that is not there |
+
+Either way the unit fails immediately and retries every 30 seconds, so `Active:` reads
+`activating (auto-restart)` instead of `active (running)`. Fix the installed unit at
+`/etc/systemd/system/owlhooter.service` — editing the copy in `deploy/` changes nothing —
+then `sudo systemctl daemon-reload && sudo systemctl restart owlhooter`.
 
 ## Operating it
 
