@@ -220,8 +220,14 @@ Two flags help without waiting for nightfall:
 ```bash
 python3 -m owlhooter.main --once              # play one clip now
 python3 -m owlhooter.main --once --volume 1.0 # ...at a specific gain
-python3 -m owlhooter.main --dry-run           # print tonight's schedule, make no sound
+python3 -m owlhooter.main --dry-run           # simulate one possible night, make no sound
+python3 -m owlhooter.main --dry-run --seed 42 # ...the same one every time
 ```
+
+`--dry-run` shows *a* night the current settings could produce, not the one the daemon will
+actually play tonight: the schedule is re-rolled from scratch on every run, and the daemon
+rolls its own. Use it to sanity-check timing after editing `config.toml`, and `journalctl`
+to see what really happened.
 
 ## Configuration
 
